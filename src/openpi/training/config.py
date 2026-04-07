@@ -20,6 +20,8 @@ import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
+import openpi.policies.r1pro_policy as r1pro_policy
+import openpi.policies.r1pro_chassis_policy as r1pro_chassis_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
@@ -964,6 +966,98 @@ _CONFIGS = [
         overwrite=True,
         exp_name="debug_pi05",
         wandb_enabled=False,
+    ),
+    #
+    # Fine-tuning R1 Pro configs.
+    #
+    TrainConfig(
+        name="pi05_r1pro_open_door",
+        model=pi0_config.Pi0Config(pi05=True),
+        data=SimpleDataConfig(
+            repo_id="r1_pro_open_door",
+            data_transforms=lambda model: _transforms.Group(
+                inputs=[r1pro_policy.R1ProInputs(model_type=model.model_type)],
+                outputs=[r1pro_policy.R1ProOutputs()],
+            ),
+            model_transforms=ModelTransformFactory(default_prompt="open the door handle"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                action_sequence_keys=("actions",),
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30_000,
+        batch_size=64,
+    ),
+    TrainConfig(
+        name="pi05_r1pro_open_door_lora",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ),
+        data=SimpleDataConfig(
+            repo_id="r1_pro_open_door",
+            data_transforms=lambda model: _transforms.Group(
+                inputs=[r1pro_policy.R1ProInputs(model_type=model.model_type)],
+                outputs=[r1pro_policy.R1ProOutputs()],
+            ),
+            model_transforms=ModelTransformFactory(default_prompt="open the door handle"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                action_sequence_keys=("actions",),
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30_000,
+        batch_size=64,
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
+        ema_decay=None,
+    ),
+    #
+    # Fine-tuning R1 Pro with chassis configs.
+    #
+    TrainConfig(
+        name="pi05_r1pro_chassis",
+        model=pi0_config.Pi0Config(pi05=True),
+        data=SimpleDataConfig(
+            repo_id="r1_pro_data_convert_chassis",
+            data_transforms=lambda model: _transforms.Group(
+                inputs=[r1pro_chassis_policy.R1ProChassisInputs(model_type=model.model_type)],
+                outputs=[r1pro_chassis_policy.R1ProChassisOutputs()],
+            ),
+            model_transforms=ModelTransformFactory(default_prompt="Open the door with a downward-press handle, go through it, and enter the room."),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                action_sequence_keys=("actions",),
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30_000,
+        batch_size=64,
+    ),
+    TrainConfig(
+        name="pi05_r1pro_chassis_all",
+        model=pi0_config.Pi0Config(pi05=True),
+        data=SimpleDataConfig(
+            repo_id="r1_pro_data_convert_chassis_all",
+            data_transforms=lambda model: _transforms.Group(
+                inputs=[r1pro_chassis_policy.R1ProChassisInputs(model_type=model.model_type)],
+                outputs=[r1pro_chassis_policy.R1ProChassisOutputs()],
+            ),
+            model_transforms=ModelTransformFactory(default_prompt="open the door handle"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                action_sequence_keys=("actions",),
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30_000,
+        batch_size=64,
     ),
     # RoboArena & PolaRiS configs.
     *roboarena_config.get_roboarena_configs(),
