@@ -135,3 +135,7 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 markers = ["manual: should be run manually."]
 testpaths = ["src", "scripts", "packages"]
+
+# Src layout: `openpi` lives under `src/`; type checker / IDE need this for import resolution.
+[tool.basedpyright]
+extraPaths = ["src"]
