@@ -2065,33 +2065,130 @@ uv run scripts/train.py pi05_r1pro_chassis \
 
 #### 15.1.2 参数全景表
 
-以下表格列出所有可通过 CLI 调整的训练参数：
+以下表格列出所有训练相关参数、默认值及其在代码中的精确定义位置。
 
-| 参数名 | 类型 | 默认值 | 所属类 | CLI 示例 |
-|--------|------|--------|--------|----------|
-| `exp_name` | str | MISSING | TrainConfig | `--exp_name run1` |
-| `num_train_steps` | int | 30,000 | TrainConfig | `--num_train_steps 50000` |
-| `batch_size` | int | 32 | TrainConfig | `--batch_size 128` |
-| `seed` | int | 42 | TrainConfig | `--seed 123` |
-| `num_workers` | int | 2 | TrainConfig | `--num_workers 4` |
-| `ema_decay` | float\|None | 0.99 | TrainConfig | `--ema_decay 0.999` |
-| `fsdp_devices` | int | 1 | TrainConfig | `--fsdp_devices 2` |
-| `save_interval` | int | 1,000 | TrainConfig | `--save_interval 500` |
-| `keep_period` | int\|None | 5,000 | TrainConfig | `--keep_period 2500` |
-| `log_interval` | int | 100 | TrainConfig | `--log_interval 50` |
-| `resume` | bool | False | TrainConfig | `--resume` |
-| `overwrite` | bool | False | TrainConfig | `--overwrite` |
-| `wandb_enabled` | bool | True | TrainConfig | `--wandb_enabled False` |
-| `project_name` | str | "openpi" | TrainConfig | `--project_name my_proj` |
-| `lr_schedule.warmup_steps` | int | 1,000 | CosineDecaySchedule | `--lr_schedule.warmup_steps 2000` |
-| `lr_schedule.peak_lr` | float | 2.5e-5 | CosineDecaySchedule | `--lr_schedule.peak_lr 5e-5` |
-| `lr_schedule.decay_steps` | int | 30,000 | CosineDecaySchedule | `--lr_schedule.decay_steps 50000` |
-| `lr_schedule.decay_lr` | float | 2.5e-6 | CosineDecaySchedule | `--lr_schedule.decay_lr 1e-6` |
-| `optimizer.b1` | float | 0.9 | AdamW | `--optimizer.b1 0.9` |
-| `optimizer.b2` | float | 0.95 | AdamW | `--optimizer.b2 0.98` |
-| `optimizer.eps` | float | 1e-8 | AdamW | `--optimizer.eps 1e-8` |
-| `optimizer.weight_decay` | float | 1e-10 | AdamW | `--optimizer.weight_decay 0.01` |
-| `optimizer.clip_gradient_norm` | float | 1.0 | AdamW | `--optimizer.clip_gradient_norm 0.5` |
+**A. TrainConfig 可通过 CLI 调整的参数**（定义于 `src/openpi/training/config.py` L468-L559）：
+
+| 参数名 | 类型 | 默认值 | 代码位置 | CLI 示例 |
+|--------|------|--------|----------|----------|
+| `exp_name` | str | MISSING（必填） | `config.py:474` | `--exp_name run1` |
+| `project_name` | str | `"openpi"` | `config.py:472` | `--project_name my_proj` |
+| `num_train_steps` | int | `30_000` | `config.py:513` | `--num_train_steps 50000` |
+| `batch_size` | int | `32` | `config.py:508` | `--batch_size 128` |
+| `seed` | int | `42` | `config.py:506` | `--seed 123` |
+| `num_workers` | int | `2` | `config.py:511` | `--num_workers 4` |
+| `ema_decay` | float\|None | `0.99` | `config.py:492` | `--ema_decay 0.999` |
+| `fsdp_devices` | int | `1` | `config.py:537` | `--fsdp_devices 2` |
+| `save_interval` | int | `1000` | `config.py:518` | `--save_interval 500` |
+| `keep_period` | int\|None | `5000` | `config.py:520` | `--keep_period 2500` |
+| `log_interval` | int | `100` | `config.py:516` | `--log_interval 50` |
+| `resume` | bool | `False` | `config.py:525` | `--resume` |
+| `overwrite` | bool | `False` | `config.py:523` | `--overwrite` |
+| `wandb_enabled` | bool | `True` | `config.py:528` | `--wandb_enabled False` |
+| `assets_base_dir` | str | `"./assets"` | `config.py:501` | `--assets_base_dir /data/assets` |
+| `checkpoint_base_dir` | str | `"./checkpoints"` | `config.py:503` | `--checkpoint_base_dir /data/ckpt` |
+| `pytorch_weight_path` | str\|None | `None` | `config.py:485` | `--pytorch_weight_path /path/to/pt` |
+| `pytorch_training_precision` | str | `"bfloat16"` | `config.py:488` | `--pytorch_training_precision float32` |
+
+**B. CosineDecaySchedule 学习率调度参数**（定义于 `src/openpi/training/optimizer.py` L16-L31）：
+
+| 参数名 | 类型 | 默认值 | 代码位置 | CLI 示例 |
+|--------|------|--------|----------|----------|
+| `lr_schedule.warmup_steps` | int | `1_000` | `optimizer.py:19` | `--lr_schedule.warmup_steps 2000` |
+| `lr_schedule.peak_lr` | float | `2.5e-5` | `optimizer.py:20` | `--lr_schedule.peak_lr 5e-5` |
+| `lr_schedule.decay_steps` | int | `30_000` | `optimizer.py:21` | `--lr_schedule.decay_steps 50000` |
+| `lr_schedule.decay_lr` | float | `2.5e-6` | `optimizer.py:22` | `--lr_schedule.decay_lr 1e-6` |
+
+**C. RsqrtDecaySchedule 学习率调度参数**（定义于 `src/openpi/training/optimizer.py` L35-L53，需通过 `--lr_schedule:rsqrt-decay-schedule` 切换）：
+
+| 参数名 | 类型 | 默认值 | 代码位置 | CLI 示例 |
+|--------|------|--------|----------|----------|
+| `lr_schedule.warmup_steps` | int | `1_000` | `optimizer.py:38` | `--lr_schedule.warmup_steps 2000` |
+| `lr_schedule.peak_lr` | float | `5e-5` | `optimizer.py:39` | `--lr_schedule.peak_lr 1e-4` |
+| `lr_schedule.timescale` | float | `10_000` | `optimizer.py:40` | `--lr_schedule.timescale 5000` |
+
+**D. AdamW 优化器参数**（定义于 `src/openpi/training/optimizer.py` L65-L86）：
+
+| 参数名 | 类型 | 默认值 | 代码位置 | CLI 示例 |
+|--------|------|--------|----------|----------|
+| `optimizer.b1` | float | `0.9` | `optimizer.py:69` | `--optimizer.b1 0.9` |
+| `optimizer.b2` | float | `0.95` | `optimizer.py:70` | `--optimizer.b2 0.98` |
+| `optimizer.eps` | float | `1e-8` | `optimizer.py:71` | `--optimizer.eps 1e-8` |
+| `optimizer.weight_decay` | float | `1e-10` | `optimizer.py:73` | `--optimizer.weight_decay 0.01` |
+| `optimizer.clip_gradient_norm` | float | `1.0` | `optimizer.py:74` | `--optimizer.clip_gradient_norm 0.5` |
+
+**E. SGD 优化器参数**（定义于 `src/openpi/training/optimizer.py` L88-L102，需通过 `--optimizer:sgd` 切换）：
+
+| 参数名 | 类型 | 默认值 | 代码位置 | CLI 示例 |
+|--------|------|--------|----------|----------|
+| `optimizer.lr` | float | `5e-5` | `optimizer.py:92` | `--optimizer.lr 1e-4` |
+| `optimizer.momentum` | float | `0.9` | `optimizer.py:93` | `--optimizer.momentum 0.95` |
+| `optimizer.nesterov` | bool | `False` | `optimizer.py:94` | `--optimizer.nesterov` |
+
+**F. Pi0Config 模型架构参数**（定义于 `src/openpi/models/pi0_config.py` L18-L48，通常通过选择预定义配置设置，也可 CLI 覆盖）：
+
+| 参数名 | 类型 | 默认值 | 代码位置 | 说明 |
+|--------|------|--------|----------|------|
+| `model.dtype` | str | `"bfloat16"` | `pi0_config.py:20` | 模型计算精度 |
+| `model.paligemma_variant` | Variant | `"gemma_2b"` | `pi0_config.py:21` | PaliGemma 专家变体 |
+| `model.action_expert_variant` | Variant | `"gemma_300m"` | `pi0_config.py:22` | Action 专家变体 |
+| `model.action_dim` | int | `32` | `pi0_config.py:25` | 动作空间维度 |
+| `model.action_horizon` | int | `50` | `pi0_config.py:26` | 预测动作序列长度 |
+| `model.max_token_len` | int | `None`→`200`(π₀.₅)/`48`(π₀) | `pi0_config.py:27,38-39` | token 序列上限（自动设置） |
+| `model.pi05` | bool | `False` | `pi0_config.py:31` | 启用 π₀.₅ 模式 |
+| `model.discrete_state_input` | bool | `None`→跟随`pi05` | `pi0_config.py:33,40-41` | 离散状态输入（自动设置） |
+| `model.pytorch_compile_mode` | str\|None | `"max-autotune"` | `pi0_config.py:35` | PyTorch 编译模式 |
+
+**G. LoRA 超参数**（硬编码于 `src/openpi/models/gemma.py` L88-L108，不可 CLI 调整）：
+
+| 变体 | LoRA rank | LoRA alpha | scaling | 应用层 | 代码位置 |
+|------|-----------|------------|---------|--------|----------|
+| `gemma_2b_lora` | `16` | `16.0` | 1.0 | attn + ffn | `gemma.py:96` |
+| `gemma_300m_lora` | `32` | `32.0` | 1.0 | attn + ffn | `gemma.py:107` |
+
+LoRA 基础配置默认值（定义于 `src/openpi/models/lora.py` L12-L25）：
+
+| 字段 | 默认值 | 代码位置 | 说明 |
+|------|--------|----------|------|
+| `alpha` | `1.0` | `lora.py:18` | 缩放因子（被 gemma.py 覆盖） |
+| `init_fn` | `normal(stddev=0.01)` | `lora.py:20` | LoRA 参数初始化 |
+| `rslora` | `False` | `lora.py:22` | 是否启用 rank-stabilized LoRA |
+| `axes` | `(-2, -1)` | `lora.py:24` | 应用 LoRA 的权重维度 |
+
+**H. 数据增强参数**（硬编码于 `src/openpi/models/model.py` L168-L187，不可 CLI 调整）：
+
+| 增强类型 | 参数 | 默认值 | 代码位置 | 应用范围 |
+|---------|------|--------|----------|---------|
+| RandomCrop | 裁剪比例 | `0.95`（即 95% 面积） | `model.py:176` | 非腕部相机 |
+| Resize | 恢复尺寸 | 原始 width, height | `model.py:177` | 非腕部相机 |
+| Rotate | 角度范围 | `(-5, 5)` 度 | `model.py:178` | 非腕部相机 |
+| ColorJitter | brightness | `0.3` | `model.py:181` | 所有相机 |
+| ColorJitter | contrast | `0.4` | `model.py:181` | 所有相机 |
+| ColorJitter | saturation | `0.5` | `model.py:181` | 所有相机 |
+
+**I. Flow Matching 训练参数**（硬编码于 `src/openpi/models/pi0.py` L188-L222，不可 CLI 调整）：
+
+| 参数 | 默认值 | 代码位置 | 说明 |
+|------|--------|----------|------|
+| 时间分布 | `Beta(1.5, 1)` | `pi0.py:197` | 偏向高噪声端采样 |
+| 时间范围缩放 | `* 0.999 + 0.001` | `pi0.py:197` | 映射到 [0.001, 0.999] |
+| 噪声类型 | `N(0, I)` 标准高斯 | `pi0.py:196` | `jax.random.normal` |
+| 损失函数 | MSE | `pi0.py:214` | `mean(square(v_t - u_t))` |
+| 推理去噪步数 | `10` | `pi0.py:222` | `sample_actions` 的 `num_steps` 参数 |
+| 时间嵌入 min_period | `4e-3` | `pi0.py:161` | `posemb_sincos` 正弦编码最小周期 |
+| 时间嵌入 max_period | `4.0` | `pi0.py:161` | `posemb_sincos` 正弦编码最大周期 |
+
+**J. Checkpoint 管理内部参数**（硬编码，不可 CLI 调整）：
+
+| 参数 | 默认值 | 代码位置 | 说明 |
+|------|--------|----------|------|
+| `max_to_keep` | `1` | `checkpoints.py:48` | Orbax 最多保留最新 1 个 checkpoint（`keep_period` 的除外） |
+
+**K. FSDP 分片内部参数**（硬编码，不可 CLI 调整）：
+
+| 参数 | 默认值 | 代码位置 | 说明 |
+|------|--------|----------|------|
+| `min_size_mbytes` | `4` (MiB) | `sharding.py:52` | 小于 4MB 的参数不分片，直接复制 |
 
 ---
 
@@ -2207,7 +2304,7 @@ train_rng = jax.random.fold_in(rng, state.step)
 |------|-----|
 | **类型** | int |
 | **默认值** | 2 |
-| **代码位置** | `config.py:511` (定义), `data_loader.py` (使用) |
+| **代码位置** | `config.py:511` (定义), `data_loader.py:264` (传递到 DataLoader), `data_loader.py:439` (PyTorch DataLoader 实际使用) |
 
 **含义**：PyTorch DataLoader 的工作进程数，用于并行预处理和加载数据。
 
@@ -2264,7 +2361,7 @@ lr
 
 **各参数详解**：
 
-**warmup_steps（默认 1,000）**
+**warmup_steps（默认 `1_000`，`optimizer.py:19`）**
 
 - 含义：从 `peak_lr / (warmup_steps + 1)` 线性升温到 `peak_lr` 的步数
 - 作用：避免训练初期大学习率导致梯度爆炸，让优化器状态（动量）有时间积累
@@ -2274,7 +2371,7 @@ lr
   - 大 batch 训练：可适当增加至 2,000-5,000
   - 短训练（<10k 步）：减至 200-500，否则 warmup 占比过大
 
-**peak_lr（默认 2.5e-5）— 最关键参数**
+**peak_lr（默认 `2.5e-5`，`optimizer.py:20`）— 最关键参数**
 
 - 含义：学习率的最大值，warmup 结束后达到
 - 调优（**最重要的超参数之一**）：
@@ -2290,7 +2387,7 @@ lr
 - **过大的信号**：loss 震荡不收敛、grad_norm 突然飙升至远超 1.0
 - **过小的信号**：loss 下降极慢，grad_norm 持续很小（<0.01）
 
-**decay_steps（默认 30,000）**
+**decay_steps（默认 `30_000`，`optimizer.py:21`）**
 
 - 含义：从 peak_lr 余弦衰减到 decay_lr 的总步数
 - 调优：
@@ -2298,7 +2395,7 @@ lr
   - 如果 `decay_steps < num_train_steps`，超出部分将以 `decay_lr` 平坦训练
   - 如果 `decay_steps > num_train_steps`，训练结束时学习率尚未降到 decay_lr
 
-**decay_lr（默认 2.5e-6）**
+**decay_lr（默认 `2.5e-6`，`optimizer.py:22`）**
 
 - 含义：余弦衰减结束后的最终学习率
 - 调优：
@@ -2367,25 +2464,25 @@ class AdamW(OptimizerConfig):
 
 **注意执行顺序**：`optax.chain` 中先执行梯度裁剪（`clip_by_global_norm`），再执行 AdamW 更新。
 
-**b1（默认 0.9）— 一阶动量衰减系数**
+**b1（默认 `0.9`，`optimizer.py:69`）— 一阶动量衰减系数**
 
 - 控制梯度均值的指数移动平均衰减速度
 - 0.9 是经典设置，通常无需修改
 - 较大值（0.95）：更平滑但响应更慢
 - 较小值（0.8）：响应更快但更不稳定
 
-**b2（默认 0.95）— 二阶动量衰减系数**
+**b2（默认 `0.95`，`optimizer.py:70`）— 二阶动量衰减系数**
 
 - 控制梯度平方均值的指数移动平均衰减速度
 - **注意**：OpenPI 使用 0.95 而非 PyTorch 默认的 0.999。这是 Gemma/LLM 训练的常见选择（参考 Google Gemma 论文），对稀疏梯度更敏感，能更快适应梯度分布变化
 - 调优：如遇训练不稳定可尝试 b2=0.98 或 0.99
 
-**eps（默认 1e-8）**
+**eps（默认 `1e-8`，`optimizer.py:71`）**
 
 - 数值稳定性常数，防止除以零
 - 通常无需调整
 
-**weight_decay（默认 1e-10）— 权重衰减**
+**weight_decay（默认 `1e-10`，`optimizer.py:73`）— 权重衰减**
 
 - **实质上被禁用**（1e-10 几乎为零）
 - 代码中有明确注释解释原因：
@@ -2400,7 +2497,7 @@ class AdamW(OptimizerConfig):
   - 如确实需要正则化效果，可尝试 1e-4 ~ 1e-2，但需监控显存占用
   - LoRA 微调通常不需要 weight decay（LoRA 参数量已经很少）
 
-**clip_gradient_norm（默认 1.0）— 梯度裁剪**
+**clip_gradient_norm（默认 `1.0`，`optimizer.py:74`）— 梯度裁剪**
 
 - 含义：当全局梯度范数超过此阈值时，按比例缩放所有梯度
 - 代码实现：在 AdamW 之前通过 `optax.clip_by_global_norm` 应用
@@ -2512,10 +2609,12 @@ def __post_init__(self):
 
 #### 15.6.2 action_dim 与 action_horizon
 
-| 参数 | 默认值 | 含义 |
-|------|--------|------|
-| `action_dim` | 32 | 动作空间维度（会自动 pad 到 32） |
-| `action_horizon` | 50 | 每次预测的动作序列长度（时间步数） |
+| 参数 | 默认值 | 代码位置（默认值设置处） | 含义 |
+|------|--------|------------------------|------|
+| `action_dim` | `32` | `pi0_config.py:25`（`action_dim: int = 32`） | 动作空间维度（会自动 pad 到 32） |
+| `action_horizon` | `50` | `pi0_config.py:26`（`action_horizon: int = 50`） | 每次预测的动作序列长度（时间步数） |
+
+注意：`BaseModelConfig`（`model.py:217-222`）声明了 `action_dim`、`action_horizon`、`max_token_len` 三个字段但**不提供默认值**，默认值由子类 `Pi0Config`（`pi0_config.py:25-27`）设置。
 
 - `action_dim=32` 是固定的（模型架构约束），实际动作维度通过 `PadStatesAndActions` 变换 pad 到 32
 - `action_horizon` 决定模型一次预测多少步未来动作：
@@ -2528,10 +2627,12 @@ def __post_init__(self):
 
 #### 15.6.3 max_token_len
 
-| 模型 | 默认值 | 说明 |
-|------|--------|------|
-| π₀ | 48 | 仅语言 prompt |
-| π₀.₅ | 200 | 语言 prompt + 离散化状态 token |
+| 模型 | 默认值 | 代码位置（默认值设置处） | 说明 |
+|------|--------|------------------------|------|
+| π₀ | `48` | `pi0_config.py:38-39`（`200 if self.pi05 else 48`） | 仅语言 prompt |
+| π₀.₅ | `200` | `pi0_config.py:38-39`（`200 if self.pi05 else 48`） | 语言 prompt + 离散化状态 token |
+
+字段声明处 `pi0_config.py:27` 设为 `None`，在 `__post_init__`（`pi0_config.py:37-39`）中根据 `pi05` 标志自动赋值。
 
 - 影响 Tokenizer 输出的 token 序列长度上限
 - π₀.₅ 需要更长的 token 序列来编码离散化的状态（如 "State: 128 64 200 ..."）
@@ -2546,13 +2647,13 @@ def __post_init__(self):
 Variant = Literal["dummy", "gemma_300m", "gemma_300m_lora", "gemma_2b", "gemma_2b_lora"]
 ```
 
-| Variant | 参数量 | width | depth | heads | 用途 |
-|---------|--------|-------|-------|-------|------|
-| `gemma_2b` | ~2B | 2048 | 18 | 8 | PaliGemma Expert（Expert 0） |
-| `gemma_2b_lora` | 2B+LoRA | 2048 | 18 | 8 | PaliGemma + LoRA 适配器 |
-| `gemma_300m` | ~311M | 1024 | 18 | 8 | Action Expert（Expert 1） |
-| `gemma_300m_lora` | 311M+LoRA | 1024 | 18 | 8 | Action Expert + LoRA 适配器 |
-| `dummy` | 极小 | 128 | 2 | 2 | 调试用 |
+| Variant | 参数量 | width | depth | heads | 代码位置（默认值设置处） |
+|---------|--------|-------|-------|-------|------------------------|
+| `gemma_2b` | ~2B | 2048 | 18 | 8 | `gemma.py:79-87`（PaliGemma Expert 0） |
+| `gemma_2b_lora` | 2B+LoRA | 2048 | 18 | 8 | `gemma.py:88-97`（PaliGemma + LoRA） |
+| `gemma_300m` | ~311M | 1024 | 18 | 8 | `gemma.py:69-78`（Action Expert 1） |
+| `gemma_300m_lora` | 311M+LoRA | 1024 | 18 | 8 | `gemma.py:98-108`（Action Expert + LoRA） |
+| `dummy` | 极小 | 64 | 4 | 8 | `gemma.py:60-68`（调试用） |
 
 **LoRA 超参数**（硬编码在 `gemma.py`）：
 
@@ -2574,7 +2675,7 @@ lora_configs={"attn": LoRAConfig(rank=32, alpha=32.0),
 
 #### 15.6.5 dtype
 
-- 默认 `"bfloat16"`
+- 默认 `"bfloat16"`（`pi0_config.py:20`，`dtype: str = "bfloat16"`）
 - 训练中，冻结参数被强制转为 bfloat16 以节省显存：
   ```python
   # scripts/train.py (L104)
@@ -2589,7 +2690,7 @@ lora_configs={"attn": LoRAConfig(rank=32, alpha=32.0),
 
 #### 15.7.1 freeze_filter 机制
 
-`freeze_filter` 指定哪些参数在训练中被冻结（不更新），其反集为 `trainable_filter`：
+`freeze_filter` 指定哪些参数在训练中被冻结（不更新）。默认值为 `nnx.Nothing`（不冻结任何参数，`config.py:495`：`freeze_filter = dataclasses.field(default_factory=nnx.Nothing)`）。其反集为 `trainable_filter`：
 
 ```python
 # src/openpi/training/config.py (L552-L554)
@@ -2727,8 +2828,8 @@ if (step % config.save_interval == 0 and step > start_step) or step == config.nu
 
 #### 15.9.3 resume 与 overwrite
 
-- `resume=True`：从 checkpoint 目录中最新的 checkpoint 恢复训练，包括 step、optimizer state、参数
-- `overwrite=True`：删除已存在的 checkpoint 目录重新开始
+- `resume`：默认 `False`（`config.py:525`，`resume: bool = False`）。设为 `True` 时从 checkpoint 目录中最新的 checkpoint 恢复训练，包括 step、optimizer state、参数
+- `overwrite`：默认 `False`（`config.py:523`，`overwrite: bool = False`）。设为 `True` 时删除已存在的 checkpoint 目录重新开始
 - 两者互斥（`config.py:557-558`）
 
 ---
@@ -2818,14 +2919,14 @@ num_steps: int | at.Int[at.Array, ""] = 10
 
 #### 15.12.1 log_interval
 
-- 默认 100 步记录一次训练指标
-- 代码路径：`train.py:263-269`
+- 默认 `100`（`config.py:516`，`log_interval: int = 100`），每 100 步记录一次训练指标
+- 使用处：`train.py:263-269`
 - 每次记录时，将累积的 info 做平均后写入 W&B
 
 #### 15.12.2 wandb_enabled
 
-- 默认 `True`，启用 Weights & Biases 日志
-- 设为 `False` 时调用 `wandb.init(mode="disabled")`
+- 默认 `True`（`config.py:528`，`wandb_enabled: bool = True`），启用 Weights & Biases 日志
+- 设为 `False` 时调用 `wandb.init(mode="disabled")`（`train.py:52`）
 - 调试时可关闭以减少依赖
 
 #### 15.12.3 训练时记录的三个关键指标
