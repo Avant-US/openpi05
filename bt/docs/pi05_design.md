@@ -3067,3 +3067,363 @@ uv run scripts/train.py pi05_r1pro_chassis \
 8. Hugging Face. LeRobot π₀/π₀.₅ 文档. huggingface.co/docs/lerobot/pi0, huggingface.co/docs/lerobot/en/pi05 — LeRobot 框架集成指南
 9. DigitalOcean. "Fine-Tuning Vision-Language-Action Models for Robotics." digitalocean.com/community/tutorials/vision-language-action-finetuning-robotics — VLA 微调综合教程
 10. AMD. "Fine-tuning with ROCm and LeRobot." rocm.blogs.amd.com/artificial-intelligence/rocm-lerobot/README.html — 硬件优化指南
+
+---
+
+# 附录 B：`norm_stats.json` 生命周期 — 生成、存储、加载与应用
+
+> 本附录以 `pi05_r1pro_chassis` 配置为例，深入分析归一化统计文件
+> `assets/pi05_r1pro_chassis/r1_pro_data_convert_chassis/norm_stats.json`
+> 在 OpenPI 代码库中的完整生命周期。
+
+## B.1 文件生成
+
+### B.1.1 生成命令
+
+```bash
+cd openpi/
+uv run python scripts/compute_norm_stats.py --config-name=pi05_r1pro_chassis
+```
+
+### B.1.2 生成流程
+
+```mermaid
+graph TB
+    A["compute_norm_stats.py<br/>main('pi05_r1pro_chassis')"] --> B["加载配置<br/>config = get_config('pi05_r1pro_chassis')<br/>data_config = config.data.create(assets_dirs, model)"]
+    B --> C["创建 DataLoader<br/>(不带归一化, 读原始数据)"]
+    C --> D["应用 transforms:<br/>1. repack_transforms<br/>2. R1ProChassisInputs()<br/>3. RemoveStrings()<br/>(不应用 Normalize)"]
+    D --> E["遍历全部数据<br/>61923 帧, keys=['state','actions']"]
+    E --> F["RunningStats.update(batch)<br/>· Welford 在线均值/方差<br/>· 5000-bin 直方图"]
+    F --> G["RunningStats.get_statistics()<br/>→ NormStats(mean, std, q01, q99)"]
+    G --> H["normalize.save()<br/>→ assets/pi05_r1pro_chassis/<br/>r1_pro_data_convert_chassis/<br/>norm_stats.json"]
+
+    style A fill:#e8f4fd,stroke:#2196F3
+    style H fill:#e8fde8,stroke:#4CAF50
+```
+
+**路径推导**:
+- `config.assets_dirs` = `Path("./assets") / config.name` = `./assets/pi05_r1pro_chassis/`（`config.py:501,540-542`）
+- `data_config.repo_id` = `"r1_pro_data_convert_chassis"`（`config.py:1028`）
+- 最终输出路径 = `assets/pi05_r1pro_chassis/r1_pro_data_convert_chassis/norm_stats.json`
+
+### B.1.3 RunningStats 算法
+
+**文件**: `src/openpi/shared/normalize.py:17-117`
+
+`RunningStats` 类维护以下在线统计量:
+
+| 统计量 | 算法 | 用途 |
+|--------|------|------|
+| mean | Welford 在线均值: `mean += (batch_mean - mean) * (n / total)` | z-score 归一化 |
+| std | 从 `mean_of_squares - mean²` 导出 | z-score 归一化 |
+| q01 | 5000-bin 直方图 → `cumsum` + `searchsorted` | quantile 归一化 |
+| q99 | 同上 | quantile 归一化 |
+
+**直方图动态调整**: 当新 batch 的 min/max 超出现有范围时，`_adjust_histograms()` 用 `np.histogram` 将旧 bin 计数重新分配到新范围的 bin 中（`normalize.py:88-98`）。
+
+**actions 展平**: `update()` 内部 `batch.reshape(-1, batch.shape[-1])` 将 `(B, 50, 23)` 的 action chunk 展平为 `(B*50, 23)`，因此分位数是在所有时间步上计算的，而非按时间步独立计算。
+
+### B.1.4 关键代码引用
+
+```python
+# compute_norm_stats.py:89-113
+def main(config_name: str, max_frames: int | None = None):
+    config = _config.get_config(config_name)
+    data_config = config.data.create(config.assets_dirs, config.model)
+    # ... 创建 data_loader (不带归一化) ...
+
+    keys = ["state", "actions"]
+    stats = {key: normalize.RunningStats() for key in keys}
+
+    for batch in tqdm.tqdm(data_loader, total=num_batches):
+        for key in keys:
+            stats[key].update(np.asarray(batch[key]))
+
+    norm_stats = {key: stats.get_statistics() for key, stats in stats.items()}
+    output_path = config.assets_dirs / data_config.repo_id
+    normalize.save(output_path, norm_stats)
+```
+
+## B.2 JSON 文件结构
+
+### B.2.1 Schema
+
+```json
+{
+  "norm_stats": {
+    "<key>": {
+      "mean": [float, ...],
+      "std":  [float, ...],
+      "q01":  [float, ...],
+      "q99":  [float, ...]
+    }
+  }
+}
+```
+
+- 外层包装: `_NormStatsDict` Pydantic model，根 key 固定为 `"norm_stats"`（`normalize.py:120-121`）
+- 序列化: `model_dump_json(indent=2)`（`normalize.py:124-126`）
+- 反序列化: `_NormStatsDict(**json.loads(data)).norm_stats`（`normalize.py:129-131`）
+
+### B.2.2 pi05_r1pro_chassis 实际内容
+
+文件只包含 `"state"` 和 `"actions"` 两个 key，每个 key 含 23 维统计量：
+
+| Key | 维度 | 含义 |
+|-----|------|------|
+| `state` | 23 | left_arm(7) + right_arm(7) + grippers(2) + torso(4) + chassis(3) |
+| `actions` | 23 | 同 state 布局，在 50-step action chunk 上展平后统计 |
+
+**部分维度的特殊值**:
+
+| 维度 | 含义 | q01 | q99 | 说明 |
+|------|------|-----|-----|------|
+| actions[17] | torso pitch | -1.5 | -1.5 | 静态不变，q01==q99 |
+| actions[19] | chassis angular_z | 0.0 | 0.0 | 静态不变，q01==q99 |
+| actions[22] | chassis linear_y | 0.0 | 0.0 | 静态不变，q01==q99 |
+
+这些维度在归一化时 `q99 - q01 + 1e-6 ≈ 1e-6`，归一化后值约为 `-1.0`。
+
+## B.3 训练时的加载与应用
+
+### B.3.1 加载链
+
+```mermaid
+sequenceDiagram
+    participant T as train.py
+    participant DL as data_loader.py
+    participant CF as config.py<br/>DataConfigFactory
+    participant N as normalize.py
+
+    T->>DL: create_data_loader(config, ...)
+    DL->>CF: config.data.create(config.assets_dirs, config.model)
+    CF->>CF: create_base_config()
+    Note over CF: asset_id = "r1_pro_data_convert_chassis"
+    CF->>N: _load_norm_stats(assets_dir, asset_id)
+    N->>N: load("assets/pi05_r1pro_chassis/<br/>r1_pro_data_convert_chassis/")
+    N-->>CF: dict[str, NormStats]
+    Note over CF: use_quantile_norm = (Pi05 != PI0) = True
+    CF-->>DL: DataConfig(norm_stats=..., use_quantile_norm=True)
+    DL->>DL: transform_dataset(dataset, data_config)
+    Note over DL: Pipeline:<br/>1. repack_transforms<br/>2. R1ProChassisInputs<br/>3. Normalize(norm_stats, quantile=True)<br/>4. model_transforms
+```
+
+**关键代码** (`config.py:181-189`):
+
+```python
+def create_base_config(self, assets_dirs, model_config):
+    asset_id = self.assets.asset_id or repo_id
+    return DataConfig(
+        norm_stats=self._load_norm_stats(assets_dirs, asset_id),
+        use_quantile_norm=model_config.model_type != ModelType.PI0,  # Pi0.5 → True
+    )
+```
+
+### B.3.2 Normalize 应用位置
+
+**文件**: `data_loader.py:172-191`
+
+```python
+def transform_dataset(dataset, data_config, *, skip_norm_stats=False):
+    norm_stats = data_config.norm_stats
+    return TransformedDataset(dataset, [
+        *data_config.repack_transforms.inputs,     # LeRobot → OpenPI key 映射
+        *data_config.data_transforms.inputs,        # R1ProChassisInputs: 重打包
+        Normalize(norm_stats, use_quantiles=True),  # ← 归一化在这里!
+        *data_config.model_transforms.inputs,       # tokenize prompt, resize images
+    ])
+```
+
+### B.3.3 Quantile 归一化公式
+
+**文件**: `transforms.py:141-145`
+
+```python
+def _normalize_quantile(self, x, stats: NormStats):
+    q01, q99 = stats.q01[..., :x.shape[-1]], stats.q99[..., :x.shape[-1]]
+    return (x - q01) / (q99 - q01 + 1e-6) * 2.0 - 1.0
+```
+
+- 将 `[q01, q99]` 范围映射到 `[-1, 1]`
+- `1e-6` 防止除零（当 q01 == q99 时）
+- **只对 `state` 和 `actions` 生效**，图像不做归一化
+- `[..., :x.shape[-1]]` 确保当 x 维度 < 统计量维度时正确截取
+
+### B.3.4 Pi0 vs Pi0.5 归一化方式
+
+| 模型 | `use_quantile_norm` | 公式 | 来源 |
+|------|-------|------|------|
+| Pi0 | `False` | `(x - mean) / (std + 1e-6)` | z-score |
+| Pi0.5 | `True` | `(x - q01) / (q99 - q01 + 1e-6) * 2 - 1` | quantile |
+
+选择逻辑在 `config.py:189`: `use_quantile_norm = model_config.model_type != ModelType.PI0`。
+
+## B.4 Checkpoint 中的保存
+
+### B.4.1 保存逻辑
+
+**文件**: `checkpoints.py:65-86`
+
+每次 `save_state()` 时，norm_stats 被复制到 checkpoint 内部:
+
+```python
+def save_state(checkpoint_manager, state, data_loader, step):
+    def save_assets(directory):
+        data_config = data_loader.data_config()
+        norm_stats = data_config.norm_stats
+        if norm_stats is not None and data_config.asset_id is not None:
+            _normalize.save(directory / data_config.asset_id, norm_stats)
+    items = {
+        "assets": save_assets,       # ← CallbackHandler 异步调用
+        "train_state": train_state,
+        "params": {"params": params},
+    }
+    checkpoint_manager.save(step, items)
+```
+
+### B.4.2 Checkpoint 目录结构
+
+```
+checkpoint_dir/{step}/
+├── assets/
+│   └── r1_pro_data_convert_chassis/
+│       └── norm_stats.json          ← 从 assets/ 复制
+├── train_state/                     ← optimizer 状态 (step, ema 等)
+└── params/                          ← 模型参数 (EMA 版本)
+```
+
+**目的**: 确保推理时使用的归一化参数与训练时完全一致，即使原始 `assets/` 目录已不可访问。
+
+## B.5 推理时的加载与应用
+
+### B.5.1 Policy 加载流程
+
+**文件**: `policies/policy_config.py:16-94`
+
+```mermaid
+sequenceDiagram
+    participant S as serve_policy.py
+    participant PC as policy_config.py
+    participant CK as checkpoints.py
+    participant N as normalize.py
+
+    S->>PC: create_trained_policy(config, checkpoint_dir)
+    PC->>PC: data_config = config.data.create(...)
+    Note over PC: norm_stats 参数未提供 → 从 checkpoint 加载
+    PC->>CK: load_norm_stats(checkpoint_dir/"assets", asset_id)
+    CK->>N: normalize.load(checkpoint_dir/"assets"/asset_id)
+    N-->>PC: dict[str, NormStats]
+    PC->>PC: 创建 Policy
+    Note over PC: transforms: Normalize(norm_stats, quantile=True)<br/>output_transforms: Unnormalize(norm_stats, quantile=True)
+```
+
+**关键代码** (`policy_config.py:59-64`):
+
+```python
+if norm_stats is None:
+    # 从 checkpoint 加载 (不依赖原始 assets/ 目录)
+    if data_config.asset_id is None:
+        raise ValueError("Asset id is required to load norm stats.")
+    norm_stats = _checkpoints.load_norm_stats(
+        checkpoint_dir / "assets", data_config.asset_id
+    )
+```
+
+### B.5.2 推理数据流
+
+```mermaid
+graph LR
+    subgraph Input["输入处理"]
+        I1["原始 observation<br/>(state, images)"] --> I2["repack_transforms"]
+        I2 --> I3["R1ProChassisInputs<br/>(重打包)"]
+        I3 --> I4["Normalize<br/>(quantile 归一化)<br/>state → [-1,1]"]
+        I4 --> I5["model_transforms<br/>(tokenize, resize)"]
+    end
+
+    I5 --> Model["Pi0.5 Model<br/>forward()"]
+
+    subgraph Output["输出处理"]
+        Model --> O1["model_transforms<br/>(output)"]
+        O1 --> O2["Unnormalize<br/>(quantile 反归一化)<br/>[-1,1] → 原始空间"]
+        O2 --> O3["R1ProChassisOutputs<br/>截取前 23 维"]
+        O3 --> O4["actions [23-dim]"]
+    end
+
+    style I4 fill:#ffc,stroke:#cc0,stroke-width:2px
+    style O2 fill:#ffc,stroke:#cc0,stroke-width:2px
+```
+
+### B.5.3 Unnormalize (反归一化)
+
+**文件**: `transforms.py:149-181`
+
+```python
+def _unnormalize_quantile(self, x, stats: NormStats):
+    q01, q99 = stats.q01, stats.q99
+    if (dim := q01.shape[-1]) < x.shape[-1]:
+        # 模型输出 32 维 (含 padding), norm_stats 只有 23 维
+        return np.concatenate([
+            (x[..., :dim] + 1.0) / 2.0 * (q99 - q01 + 1e-6) + q01,  # 前 23 维反归一化
+            x[..., dim:]                                                # 后 9 维原样保留
+        ], axis=-1)
+    return (x + 1.0) / 2.0 * (q99 - q01 + 1e-6) + q01
+```
+
+**维度处理**: 模型输出 32-dim action (含 9 个 padding 维)，但 norm_stats 只有 23-dim → 前 23 维用 q01/q99 反归一化，后 9 维 padding 直接透传。`R1ProChassisOutputs` 随后截取前 23 维作为最终 action 输出。
+
+## B.6 完整生命周期总结
+
+```mermaid
+graph TB
+    subgraph Gen["1. 生成 (一次性)"]
+        G1["compute_norm_stats.py"] --> G2["遍历数据集<br/>RunningStats<br/>mean/std/q01/q99"]
+        G2 --> G3["assets/.../norm_stats.json"]
+    end
+
+    subgraph Train["2. 训练 (每次自动加载)"]
+        G3 --> T1["DataConfigFactory<br/>._load_norm_stats()"]
+        T1 --> T2["Normalize transform<br/>quantile 归一化"]
+        T2 --> T3["模型训练<br/>(在归一化空间中)"]
+        T3 --> T4["save_state()<br/>复制到 checkpoint"]
+    end
+
+    subgraph Infer["3. 推理 (从 checkpoint 加载)"]
+        T4 --> I1["load_norm_stats()<br/>从 checkpoint/assets/"]
+        I1 --> I2["Normalize<br/>(输入归一化)"]
+        I2 --> I3["模型推理"]
+        I3 --> I4["Unnormalize<br/>(输出反归一化)"]
+        I4 --> I5["原始 action 空间"]
+    end
+
+    style Gen fill:#e8f4fd,stroke:#2196F3
+    style Train fill:#fde8e8,stroke:#f44336
+    style Infer fill:#e8fde8,stroke:#4CAF50
+```
+
+### 设计要点
+
+1. **一次生成，多次使用** — norm_stats 在训练前计算一次，训练和推理复用
+2. **Checkpoint 自包含** — norm_stats 随模型参数一起保存，推理不依赖原始 assets 目录
+3. **Pi0 vs Pi0.5 自动切换** — z-score 或 quantile 由 model_type 决定
+4. **维度安全** — Unnormalize 处理 padding 维度不匹配，Normalize 用切片 `[:x.shape[-1]]` 防越界
+5. **数值稳定** — `1e-6` epsilon 防止 q01==q99 时除零（torso/chassis 某些静态维度）
+
+### 源码索引
+
+| 组件 | 文件 | 行号 |
+|------|------|------|
+| NormStats 数据类 | `src/openpi/shared/normalize.py` | 9-14 |
+| RunningStats (在线统计) | `src/openpi/shared/normalize.py` | 17-117 |
+| save/load 序列化 | `src/openpi/shared/normalize.py` | 124-146 |
+| Normalize transform | `src/openpi/transforms.py` | 114-145 |
+| Unnormalize transform | `src/openpi/transforms.py` | 148-181 |
+| DataConfig.norm_stats | `src/openpi/training/config.py` | 67-73 |
+| _load_norm_stats | `src/openpi/training/config.py` | 192-202 |
+| assets_dirs 路径 | `src/openpi/training/config.py` | 501, 540-542 |
+| pi05_r1pro_chassis 配置 | `src/openpi/training/config.py` | 1024-1042 |
+| 训练时加载 | `src/openpi/training/data_loader.py` | 172-191 |
+| Checkpoint 保存 | `src/openpi/training/checkpoints.py` | 65-86 |
+| Checkpoint 加载 | `src/openpi/training/checkpoints.py` | 110-114 |
+| 推理时创建 Policy | `src/openpi/policies/policy_config.py` | 16-94 |
+| 生成脚本 | `scripts/compute_norm_stats.py` | 89-113 |
+| R1Pro data transform | `src/openpi/policies/r1pro_chassis_policy.py` | 40-81 |
