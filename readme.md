@@ -3,7 +3,6 @@
 基于 [OpenPI](https://github.com/Physical-Intelligence/openpi) 在 **R1 Pro** 机器人上做 π₀.₅ 微调与部署。动作空间 **23 维**（双臂 14 + 双夹爪 2 + torso 4 + 底盘速度 3）。
 
 ---
-
 ## 1. 安装
 
 ```bash
