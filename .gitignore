@@ -168,3 +168,10 @@ cython_debug/
 #.idea/
 .vscode
 p/
+PKG-INFO
+*.egg-info/
+.claude/settings.json
+_data
+_out
+_ckpt
+*.log
